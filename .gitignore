@@ -2,3 +2,4 @@
 node_modules
 auth.json
 .DS_Store
+.codebuddy

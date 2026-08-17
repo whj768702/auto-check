@@ -43,6 +43,20 @@ if (!fs.existsSync('auth.json')) {
       // 等待页面完全加载
       await page.waitForLoadState('networkidle');
 
+      // 监听签到相关网络请求，用于诊断点击是否真正触发了请求
+      const checkInResponses = [];
+      page.on('response', async (res) => {
+        if (res.url().includes('growth_api')) {
+          let body = '';
+          try { body = (await res.text()).slice(0, 300); } catch {}
+          console.log(`  [网络] ${res.request().method()} ${res.url()} -> ${res.status()} ${body}`);
+          checkInResponses.push(res.url());
+        }
+      });
+      page.on('console', msg => {
+        if (msg.type() === 'error') console.log(`  [页面错误] ${msg.text().slice(0, 200)}`);
+      });
+
       // 尝试等待签到相关元素出现
       try {
         await page.waitForSelector('text=签到', { timeout: 10000 });
@@ -82,27 +96,39 @@ if (!fs.existsSync('auth.json')) {
       }
 
       // 尝试点击签到按钮并验证是否真正生效
+      // 判定依据（任一满足即算成功）：
+      //   a. 按钮文字变为"已签到"
+      //   b. 页面出现签到结果弹窗
+      //   c. 监听到 check_in 相关网络请求返回成功
       const checkInButton = page.locator('.signin.btn');
       const fallbackButton = page.locator('button:has-text("签到")');
       const target = (await checkInButton.count() > 0) ? checkInButton : fallbackButton;
+
+      async function checkSignedIn(label) {
+        const btnText = (await target.textContent().catch(() => '') || '').trim();
+        const modal = page.locator('.byte-modal, .modal, [class*="signin-result"], [class*="code-calender"]');
+        const modalVisible = await modal.first().isVisible().catch(() => false);
+        const apiFired = checkInResponses.some(u => u.includes('check_in'));
+        console.log(`  - [${label}] 按钮文字="${btnText}", 弹窗可见=${modalVisible}, 签到请求已发出=${apiFired}`);
+        await page.screenshot({ path: `debug-after-${label}.png`, fullPage: true });
+        return btnText.includes('已签到') || modalVisible || apiFired;
+      }
 
       if (await target.count() > 0) {
         await target.click();
         console.log("  - 已点击签到按钮");
         await page.waitForTimeout(3000);
 
-        // 验证签到是否生效（按钮文字应变为"已签到"）
-        const btnText = (await target.textContent() || '').trim();
-        console.log(`  - 点击后按钮文字: "${btnText}"`);
-
-        if (!btnText.includes('已签到')) {
+        if (await checkSignedIn('click')) {
+          console.log("  - 签到成功（Playwright click）");
+        } else {
           console.log("  - 点击未生效，尝试 DOM 原生 click()...");
           await target.evaluate(el => el.click());
           await page.waitForTimeout(3000);
-          const btnText2 = (await target.textContent() || '').trim();
-          console.log(`  - DOM click 后按钮文字: "${btnText2}"`);
 
-          if (!btnText2.includes('已签到')) {
+          if (await checkSignedIn('domclick')) {
+            console.log("  - 签到成功（DOM click）");
+          } else {
             console.log("  - 仍未生效，尝试模拟完整鼠标事件序列...");
             await target.evaluate(el => {
               const rect = el.getBoundingClientRect();
@@ -114,16 +140,13 @@ if (!fs.existsSync('auth.json')) {
               el.dispatchEvent(new MouseEvent('click', opts));
             });
             await page.waitForTimeout(3000);
-            const btnText3 = (await target.textContent() || '').trim();
-            console.log(`  - 模拟事件后按钮文字: "${btnText3}"`);
-            console.log(btnText3.includes('已签到')
-              ? "  - 模拟事件签到成功"
-              : "  - 签到仍未成功，请检查截图 debug-signin.png");
-          } else {
-            console.log("  - DOM click 签到成功");
+
+            if (await checkSignedIn('mouse')) {
+              console.log("  - 签到成功（模拟鼠标事件）");
+            } else {
+              console.log("  - 签到仍未成功，请查看 debug-after-mouse.png 与上方 [网络] 日志");
+            }
           }
-        } else {
-          console.log("  - 签到成功（按钮文字已变更）");
         }
       } else {
         console.log("  - 未找到可点击的签到按钮");
