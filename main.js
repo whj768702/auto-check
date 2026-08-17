@@ -63,10 +63,10 @@ if (!fs.existsSync('auth.json')) {
 
       // 页面已加载，重新检查签到按钮
       const signInSelectors = [
+        '.signin.btn',
+        'button.signin',
         'button:has-text("立即签到")',
-        'button:has-text("签到")',
-        '.signin-btn',
-        '.check-in-btn'
+        'button:has-text("签到")'
       ];
 
       for (const selector of signInSelectors) {
@@ -81,13 +81,19 @@ if (!fs.existsSync('auth.json')) {
         }
       }
 
-      // 尝试点击找到的签到按钮
-      const checkInButton = page.locator('button:has-text("签到")');
+      // 尝试点击找到的签到按钮（优先使用实际的 class 选择器，失败则退回文本匹配）
+      const checkInButton = page.locator('.signin.btn');
       if (await checkInButton.count() > 0) {
         await checkInButton.click();
         console.log("  - 已点击签到按钮");
       } else {
-        console.log("  - 未找到可点击的签到按钮");
+        const fallbackButton = page.locator('button:has-text("签到")');
+        if (await fallbackButton.count() > 0) {
+          await fallbackButton.click();
+          console.log("  - 已通过文本匹配点击签到按钮");
+        } else {
+          console.log("  - 未找到可点击的签到按钮");
+        }
       }
     } catch (e) {
       if (e.name === 'TimeoutError') {
