@@ -81,19 +81,52 @@ if (!fs.existsSync('auth.json')) {
         }
       }
 
-      // 尝试点击找到的签到按钮（优先使用实际的 class 选择器，失败则退回文本匹配）
+      // 尝试点击签到按钮并验证是否真正生效
       const checkInButton = page.locator('.signin.btn');
-      if (await checkInButton.count() > 0) {
-        await checkInButton.click();
+      const fallbackButton = page.locator('button:has-text("签到")');
+      const target = (await checkInButton.count() > 0) ? checkInButton : fallbackButton;
+
+      if (await target.count() > 0) {
+        await target.click();
         console.log("  - 已点击签到按钮");
-      } else {
-        const fallbackButton = page.locator('button:has-text("签到")');
-        if (await fallbackButton.count() > 0) {
-          await fallbackButton.click();
-          console.log("  - 已通过文本匹配点击签到按钮");
+        await page.waitForTimeout(3000);
+
+        // 验证签到是否生效（按钮文字应变为"已签到"）
+        const btnText = (await target.textContent() || '').trim();
+        console.log(`  - 点击后按钮文字: "${btnText}"`);
+
+        if (!btnText.includes('已签到')) {
+          console.log("  - 点击未生效，尝试 DOM 原生 click()...");
+          await target.evaluate(el => el.click());
+          await page.waitForTimeout(3000);
+          const btnText2 = (await target.textContent() || '').trim();
+          console.log(`  - DOM click 后按钮文字: "${btnText2}"`);
+
+          if (!btnText2.includes('已签到')) {
+            console.log("  - 仍未生效，尝试模拟完整鼠标事件序列...");
+            await target.evaluate(el => {
+              const rect = el.getBoundingClientRect();
+              const cx = rect.left + rect.width / 2;
+              const cy = rect.top + rect.height / 2;
+              const opts = { bubbles: true, cancelable: true, view: window, clientX: cx, clientY: cy };
+              el.dispatchEvent(new MouseEvent('mousedown', opts));
+              el.dispatchEvent(new MouseEvent('mouseup', opts));
+              el.dispatchEvent(new MouseEvent('click', opts));
+            });
+            await page.waitForTimeout(3000);
+            const btnText3 = (await target.textContent() || '').trim();
+            console.log(`  - 模拟事件后按钮文字: "${btnText3}"`);
+            console.log(btnText3.includes('已签到')
+              ? "  - 模拟事件签到成功"
+              : "  - 签到仍未成功，请检查截图 debug-signin.png");
+          } else {
+            console.log("  - DOM click 签到成功");
+          }
         } else {
-          console.log("  - 未找到可点击的签到按钮");
+          console.log("  - 签到成功（按钮文字已变更）");
         }
+      } else {
+        console.log("  - 未找到可点击的签到按钮");
       }
     } catch (e) {
       if (e.name === 'TimeoutError') {
