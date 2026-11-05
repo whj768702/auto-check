@@ -9,6 +9,9 @@
   "author": "",
   "license": "ISC",
   "description": "",
+  "engines": {
+    "node": ">=24"
+  },
   "dependencies": {
     "playwright": "^1.64.1"
   }

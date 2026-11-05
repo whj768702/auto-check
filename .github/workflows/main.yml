@@ -21,7 +21,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '18' # 使用一个LTS版本
+          node-version: '24' # 使用最新 LTS 版本
 
       # 3. 安装项目依赖
       - name: Install dependencies
